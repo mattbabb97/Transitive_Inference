@@ -1,0 +1,18 @@
+FULLSCREEN?
+False
+STEPWISE PHASE (1:AB,2:BC,3:AB BC, 4:XX, 5:AB BC XX, 6:CD, 7:AB BC XX CD, 8: DE...)
+10
+TRAINING CONDITION (1: Forward, phase 1; 2: Reverse, phase 5, 3: Random, phase 3)
+1
+ICON CONDITION (1, 2, or 3 to counterbalance icon identities)
+1
+BLOCKS PER SESSION
+100
+ITI (sec)
+1
+TRIAL DURATION (sec)
+30
+RUNTIME (in seconds)
+200000
+TIMEOUT (in seconds)
+1
