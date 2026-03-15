@@ -1,4 +1,4 @@
-# README: Capuchin Sequence Learning Task — Computerized Task & Statistical Analysis
+# README: Capuchin Transitive Inference List Task — Computerized Task & Statistical Analysis
 
 ## Project Overview
 
