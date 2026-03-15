@@ -16,18 +16,16 @@ This project examines whether tufted capuchin monkeys (*Sapajus apella*) can lea
 ```
 project/
 ├── README.md
-├── task/
-│   ├── task.py                 # Main task script (Python 3)
-│   └── stimuli/                # Stimulus images (colored/shaped icons)
-├── Data/
-│   ├── TIL_Master_File.xlsx    # Raw trial-by-trial output files per subject
+├── TRANSITIVE INFERENCE/
+│   ├── transitive inference train.py                   # Main training script (Python 3)
+│   └── transitive inference test.py                    # Main testing script (Python 3)
 ├── Data Analysis/
-│   ├── TIL_Analysis.R          # Primary GLMM models
-│   
-│   
-└── outputs/
-    ├── figures/
-    └── tables/
+    ├── TIL_Analysis.R          # Primary GLMM models
+    ├── TIL_Master_File.xlsx    # Raw trial-by-trial output files per subject
+└── Figures/
+    ├── Figure_1_Trial_Type_v3
+    └── Figure_2_Ordinal_Position
+    └── Figure_3_Critical_Pairs
 ```
 
 ---
