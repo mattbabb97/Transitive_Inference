@@ -1,0 +1,1012 @@
+---
+title: "Transitive Inference List Task Analysis"
+output: word_document
+date: "2025-05-24"
+---
+
+```{r setup, include=FALSE}
+```
+
+```{r Install your Packages}
+
+```
+
+```{r}
+library(rstudioapi)
+library(openxlsx)
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+library(Rcpp)
+library(lubridate)
+library(plyr)
+library(pscl)
+library(multcomp)
+library(emmeans)
+library(lsmeans)
+library(fitdistrplus)
+library(lme4)
+library(car)
+library(glmmTMB)
+library(emmeans)
+library(overdisp)
+library(sjPlot)
+library(Rmisc)
+library(rstatix)
+library(MASS)
+library(gridExtra)
+library(ggpubr)
+library(rlang)
+library(ggbeeswarm)
+```
+
+
+```{r}
+# Adjust Path here if needed
+DIL.data <- read_excel("C:/Users/matth/OneDrive/Documents/Georgia State/Research Projects/Transitive Inference/Manuscript/Data Analysis/TIL_Master_File.xlsx")
+MIL.data <- read_excel("C:/Users/matth/OneDrive/Documents/Georgia State/Research Projects/Transitive Inference/Manuscript/Data Analysis/MIL_Master_File.xlsx")
+TIL.data <- rbind(DIL.data, MIL.data)
+rm(MIL.data)
+```
+
+
+```{r}
+trained.data <- subset(TIL.data, trained_or_novel == "trained")
+
+novel.within <- subset(TIL.data, trained_or_novel == "within_novel")
+
+novel.bw <- subset(TIL.data, trained_or_novel == "bw_novel")
+```
+
+```{r Only Take the first 25 of each testing trial type}
+detach("package:Rmisc")
+detach("package:plyr")
+
+TIL.data <- TIL.data %>%
+  rename(trial_type_cat = `trial_type_.`)
+
+TIL.data.cleaned <- TIL.data %>%
+  arrange(monkey, date, time, block, trial_number) %>%
+  group_by(monkey, trial_type_cat) %>%
+  mutate(
+    trial_type_cat_num = as.numeric(as.character(trial_type_cat)),
+    trial_count_per_type = row_number()
+  ) %>%
+  filter(
+    (trial_type_cat_num < 7) |
+    (trial_type_cat_num >= 7 & trial_count_per_type <= 25)
+  ) %>%
+  select(-trial_type_cat_num) %>%
+  ungroup()
+
+TIL.data <- TIL.data.cleaned
+```
+
+```{r How many sessions did it take each monkey to complete all 25 trials?}
+TIL.data %>%
+  group_by(monkey, date) %>%
+  summarise(day_flag = 1, .groups = "drop") %>%
+  group_by(monkey) %>%
+  summarise(testing_days = sum(day_flag))
+```
+
+
+```{r}
+TIL.data$monkey <- as.factor(TIL.data$monkey)
+TIL.data$trial_type <- as.factor(TIL.data$trial_type)
+TIL.data$trained_or_novel <- as.factor(TIL.data$trained_or_novel)
+
+result.by.trial <- TIL.data %>%
+  group_by(monkey, trial_type) %>%
+  summarize(
+    count_correct = sum(correct_or_incorrect == 1, na.rm = TRUE),
+    count_incorrect = sum(correct_or_incorrect == 0, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+result.by.trial$total_trial <- result.by.trial$count_correct + result.by.trial$count_incorrect
+
+result.by.trial$pct_correct <- result.by.trial$count_correct / 
+  (result.by.trial$count_correct + result.by.trial$count_incorrect)
+```
+
+
+```{r}
+result.by.category <- TIL.data %>%
+  group_by(monkey, trained_or_novel) %>%
+  summarize(
+    count_correct = sum(correct_or_incorrect == 1, na.rm = TRUE),
+    count_incorrect = sum(correct_or_incorrect == 0, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+result.by.category$total_trial <- result.by.category$count_correct + result.by.category$count_incorrect
+
+result.by.category$pct_correct <- result.by.category$count_correct / 
+  (result.by.category$count_correct + result.by.category$count_incorrect)
+
+```
+
+```{r}
+head(TIL.data)
+
+TIL.data$end_items <- ifelse(TIL.data$trial_type == "A>B" | 
+                               TIL.data$trial_type == "A>C" |
+                               TIL.data$trial_type == "A>D" |
+                               TIL.data$trial_type == "A>E" |
+                               TIL.data$trial_type == "A>F" |
+                               TIL.data$trial_type == "A>G" |
+                               TIL.data$trial_type == "B>G" |
+                               TIL.data$trial_type == "C>G" |
+                               TIL.data$trial_type == "D>G" |
+                               TIL.data$trial_type == "E>G" |
+                               TIL.data$trial_type == "F>G"
+                               , 1, 0)
+
+result.by.end.items <- TIL.data %>%
+  group_by(monkey, end_items) %>%
+  summarize(
+    count_correct = sum(correct_or_incorrect == 1, na.rm = TRUE),
+    count_incorrect = sum(correct_or_incorrect == 0, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+result.by.end.items$total_trials <- result.by.end.items$count_correct + result.by.end.items$count_incorrect
+
+result.by.end.items$correct_pct <- result.by.end.items$count_correct / result.by.end.items$total_trials
+    
+```
+
+```{r}
+
+novel.df <- subset(TIL.data, trained_or_novel != "trained")
+
+novel.df$critical_pairs <- ifelse(novel.df$trial_type == "B>D" | 
+                               novel.df$trial_type == "B>F" |
+                               novel.df$trial_type == "D>F",
+                               "equal", ifelse(TIL.data$trial_type == "A>D" |
+                                                 novel.df$trial_type == "A>F" |
+                                                 novel.df$trial_type == "A>G" |
+                                                 novel.df$trial_type == "D>G" |
+                                                 novel.df$trial_type == "B>G", 
+                                               "consistent", "contradictory"))
+
+
+result.by.critical <- novel.df %>%
+  group_by(monkey, critical_pairs) %>%
+  summarize(
+    count_correct = sum(correct_or_incorrect == 1, na.rm = TRUE),
+    count_incorrect = sum(correct_or_incorrect == 0, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+result.by.critical$total_trials <- result.by.critical$count_correct + result.by.critical$count_incorrect
+
+result.by.critical$correct_pct <- result.by.critical$count_correct / result.by.critical$total_trials
+
+result.by.critical$critical_pairs <- factor(result.by.critical$critical_pairs, 
+                                              levels = c("consistent", "contradictory", "equal"),
+                                              labels = c("Consistent", "Contradictory", "Equal"))
+
+```
+
+```{r Remove any rows where monkey is NA}
+result.by.trial <- result.by.trial[!is.na(result.by.trial$monkey), ]
+result.by.category <- result.by.category[!is.na(result.by.category$monkey), ]
+result.by.critical <- result.by.critical[!is.na(result.by.critical$monkey), ]
+result.by.end.items <- result.by.end.items[!is.na(result.by.end.items$monkey), ]
+```
+
+
+```{r}
+table(TIL.data$trial_type, TIL.data$trained_or_novel)
+```
+
+
+```{r Prep the Models for Trained vs Within vs Between Trials}
+# Since trained_or_novel and ordinal_pos are structurally linked (e.g., trained pairs cannot have same ordinal positions) we need to make a new variable
+
+TIL.data <- TIL.data %>%
+  mutate(trial_config = case_when(
+    trial_type %in% c("A>B", "B>C", "C>D", "D>E", "E>F", "F>G") ~ "trained",
+    trial_type %in% c("B>D", "B>F", "D>F") ~ "bw_list_equal_ordinal",
+    trial_type %in% c("A>D", "A>F", "A>G", "B>G", "D>G") ~ "bw_list_consistent_ordinal",
+    trial_type %in% c("A>C", "C>E", "E>G") ~ "within_list",
+    trial_type %in% c("A>E", "B>E", "C>F", "C>G") ~ "bw_list_contradictory_ordinal",
+    TRUE ~ NA_character_  # Catch any unexpected cases
+  ))
+
+TIL.data$trial_config <- as.factor(TIL.data$trial_config)
+
+TIL.data$trial_config <- relevel(TIL.data$trial_config, ref = "trained")
+
+names(TIL.data)[names(TIL.data) == "correct_or_incorrect"] <- "accuracy"
+
+TIL.data$trained_or_novel <- as.factor(TIL.data$trained_or_novel)
+TIL.data$ordinal_pos <- as.factor(TIL.data$ordinal_pos)
+TIL.data$accuracy <- as.factor(TIL.data$accuracy)
+TIL.data$deferred_condition <- as.factor(TIL.data$deferred_condition)
+
+TIL.data <- TIL.data %>%
+  mutate(sex = if_else(monkey %in% c("Griffin", "Liam", "Logan", "Nkima"), "Male", "Female"))
+
+```
+
+
+
+
+
+
+```{r Run the Models For Trained vs Within vs Between Trials}
+# Models
+model_null_trials<-glmer(accuracy ~ 1 + (1 | monkey), 
+                  data=TIL.data, family = binomial)
+
+# One fixed effect only models
+model_1_trials<-glmer(accuracy ~ trained_or_novel + (1 | monkey), 
+               data=TIL.data, family = binomial)
+
+model_2_trials<-glmer(accuracy ~ sex + (1 | monkey), 
+               data=TIL.data, family = binomial)
+
+model_3_trials<-glmer(accuracy ~ deferred_condition + (1 | monkey), 
+               data=TIL.data, family = binomial)
+
+# Two fixed effects no interaction
+model_4_trials<-glmer(accuracy ~ trained_or_novel + sex + (1 | monkey), 
+               data=TIL.data, family = binomial)
+
+model_5_trials<-glmer(accuracy ~ trained_or_novel + deferred_condition + (1 | monkey), 
+               data=TIL.data, family = binomial)
+
+# two way interaction
+model_6_trials<-glmer(accuracy ~ trained_or_novel*sex + (1 | monkey), 
+               data=TIL.data, family = binomial)
+
+model_7_trials<-glmer(accuracy ~ trained_or_novel*deferred_condition + (1 | monkey), 
+               data=TIL.data, family = binomial)
+```
+
+
+```{r Compare the two best fitting models}
+anova(model_6_trials, model_7_trials)
+```
+
+```{r Trial Type Model (Model 6 Trial Type X Sex)}
+summary(model_6_trials)
+
+Anova(model_6_trials, type = "III", test.statistic = "Chisq")
+
+tab_model(model_6_trials,
+          show.est = TRUE, show.ci = 0.95,
+          show.p = TRUE, p.style = "numeric",
+          show.se = TRUE, show.r2 = TRUE,
+          show.zeroinf = FALSE,
+          show.re.var = FALSE, show.icc = FALSE,
+          title = "Binomial GLMM predicting accuracy")
+
+rm(model_1_trials, model_2_trials, model_3_trials, model_4_trials, model_5_trials)
+```
+
+
+```{r Supplementary Online Information}
+# Best Model: model_7
+summary(model_7_trials)
+
+Anova(model_7_trials, type = "III", test.statistic = "Chisq")
+
+rm(model_7_trials)
+```
+
+
+```{r Supplementary Online Information}
+# Calculate Mean Accuracy of 3 and 4 trial group for within list trials
+TIL.data$accuracy <- as.numeric(as.character(TIL.data$accuracy))
+mean(TIL.data$accuracy[TIL.data$trained_or_novel == "within_novel" & 
+                       TIL.data$deferred_condition == "3"])
+
+# Recode accuracy so 0 = incorrect and 1 = correct
+TIL.data$accuracy_bin <- ifelse(TIL.data$accuracy == 2, 1, 0)
+
+p3 <- mean(TIL.data$accuracy_bin[
+  TIL.data$trained_or_novel == "within_novel" & 
+  TIL.data$deferred_condition == "3"
+])
+p3
+
+p4 <- mean(TIL.data$accuracy_bin[
+  TIL.data$trained_or_novel == "within_novel" & 
+  TIL.data$deferred_condition == "4"
+])
+p4
+
+```
+
+```{r Probe the Trial Type Sex Interaction}
+# Estimated marginal means for interaction
+emm_all <- emmeans(model_6_trials, ~ trained_or_novel * sex, type = "response")
+
+# 1) Pairwise comparisons of trial types *within* each deferred condition
+contrast_within_sex <- contrast(emm_all, 
+                                    method = "pairwise", 
+                                    by = "sex", 
+                                    adjust = "holm")
+
+# 2) Pairwise comparisons of deferred conditions *within* each trial type
+contrast_within_trialtype <- contrast(emm_all, 
+                                     method = "pairwise", 
+                                     by = "trained_or_novel",  # now by trial type
+                                     adjust = "holm")
+
+# View results
+contrast_within_sex
+confint(contrast_within_sex, level = 0.95)
+
+```
+
+```{r Determine what was different from chance (0.50) using t-tests with Holm correction}
+TIL.data$accuracy <- as.numeric(as.character(TIL.data$accuracy))
+
+
+subject_props <- TIL.data %>%
+  group_by(monkey, trained_or_novel, sex) %>%
+  summarise(
+    prop_correct = mean(accuracy)
+  ) %>%
+  ungroup()
+
+library(broom)
+
+# Run t-tests comparing to chance (0.5)
+t_test_results <- subject_props %>%
+  group_by(trained_or_novel, sex) %>%
+  summarise(
+    t_test = list(t.test(prop_correct, mu = 0.5)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    tidy = map(t_test, broom::tidy)
+  ) %>%
+  unnest(tidy)
+
+t_test_results <- t_test_results %>%
+  mutate(p.adjusted = p.adjust(p.value, method = "holm"))
+
+detach("package:broom", unload = TRUE)
+
+
+
+# ALL GROUPS ARE *** Away from Chance (0.50)
+
+TIL.data$accuracy <- as.factor(TIL.data$accuracy)
+
+
+```
+
+
+```{r Calculate Mean Accuracy for all Trial Types for each sex}
+p_by_sex_trial <- TIL.data %>%
+  group_by(sex, trained_or_novel) %>%
+  summarise(
+    p = mean(accuracy_bin, na.rm = TRUE),
+    n = n()
+  ) %>%
+  ungroup()
+
+p_by_sex_trial
+```
+
+
+
+```{r Visualize Trial Type x Deffered Condition Interaction}
+TIL.data.visual <- TIL.data %>%
+  group_by(monkey, sex, trained_or_novel) %>%
+  summarize(
+    count_correct = sum(accuracy == 1, na.rm = TRUE),
+    count_incorrect = sum(accuracy == 0, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+TIL.data.visual$total_trials <- TIL.data.visual$count_correct + TIL.data.visual$count_incorrect
+
+TIL.data.visual$correct_pct <- TIL.data.visual$count_correct / TIL.data.visual$total_trials
+
+TIL.data.visual$sex <- as.factor(TIL.data.visual$sex)
+
+
+```
+
+```{r Supplementary Online Information}
+library(ggsignif)
+TIL.data.visual$trained_or_novel <- factor(TIL.data.visual$trained_or_novel, 
+                                              levels = c("trained", "within_novel", "bw_novel"),
+                                              labels = c("Adjacent\nWithin-List\n(Reinforced)", 
+                                                         "Non-Adjacent\nWithin-List\n(Non-reinforced)", 
+                                                         "Between-List\n \n(Non-reinforced)"))
+
+
+
+# Create a small data frame with the label info
+asterisk_data_female <- data.frame(
+  trained_or_novel = c("Adjacent\nWithin-List\n(Reinforced)", 
+                       "Non-Adjacent\nWithin-List\n(Non-reinforced)", 
+                       "Between-List\n \n(Non-reinforced)"),  
+  correct_pct = c(0.99, 0.99, 0.99),                     
+  label = c("***", "***", "***"),
+  sex = rep("Female", 3)
+)
+
+asterisk_data_male <- data.frame(
+  trained_or_novel = c("Adjacent\nWithin-List\n(Reinforced)", 
+                       "Non-Adjacent\nWithin-List\n(Non-reinforced)", 
+                       "Between-List\n \n(Non-reinforced)"), 
+  correct_pct = c(0.99, 0.99, 0.99),  
+  label = c("*", "**", "*"),
+  sex = rep("Male", 3)
+)
+
+ggplot(TIL.data.visual, aes(x = trained_or_novel, y = correct_pct, fill = trained_or_novel)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) + 
+  geom_quasirandom(width = 0.25, alpha = 0.6, color = "black") + 
+  geom_hline(yintercept = 0.50, linetype = "dashed") +
+  ylim(0, 1.0) +
+  labs(x = "Type of Pair", y = "Percentage Correct") +
+  scale_fill_manual(values = c("Adjacent\nWithin-List\n(Reinforced)" = "red3", 
+                               "Non-Adjacent\nWithin-List\n(Non-reinforced)" = "blue", 
+                               "Between-List\n \n(Non-reinforced)" = 'gold1')) +
+  facet_wrap(~sex) +
+  geom_text(data = asterisk_data_female, aes(x = trained_or_novel, y = correct_pct, label = label),
+            inherit.aes = FALSE,size = 6, fontface = "bold") +
+  geom_text(data = asterisk_data_male, aes(x = trained_or_novel, y = correct_pct, label = label), 
+            inherit.aes = FALSE, 
+            size = 6, fontface = "bold") +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    legend.justification = c(1, 0),
+    legend.background = element_rect(fill = "white", color = "black"), 
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    
+    # Increase axis tick labels size
+    axis.text.x = element_text(size = 10),  # X axis tick labels
+    axis.text.y = element_text(size = 14),  # Y axis tick labels
+    
+    # Increase axis titles size
+    axis.title.x = element_text(size = 16, face = "bold"),  # X axis title
+    axis.title.y = element_text(size = 16, face = "bold"),  # Y axis title
+    
+    # Increase facet strip text (facet titles)
+    strip.text = element_text(size = 16, face = "bold")
+  )
+
+ggsave("Figure_1_Trial_Type_v3.png", width = 8, height = 6, dpi = 300)
+
+# For labeling only, so go ahead and remove
+rm(asterisk_data_female, asterisk_data_male)
+
+```
+
+```{r Correlation 1:}
+
+```
+
+```{r Correlation 2: trained trial accuracy x trained trial number}
+trained_trial_data <- TIL.data %>%
+  filter(trained_or_novel == "trained") %>%
+  arrange(monkey, date) %>%
+  group_by(monkey) %>%
+  mutate(trained_trial_number = row_number()) %>%
+  select(monkey, date, deferred_condition, trained_trial_number, accuracy) %>%
+  ungroup()
+
+trained_trial_data$accuracy <- as.factor(trained_trial_data$accuracy)
+
+# Center and scale the trial number because all monkeys had different numbers of trials
+trained_trial_data <- trained_trial_data %>%
+  mutate(trial_scaled = scale(trained_trial_number, center = TRUE, scale = TRUE))
+
+
+# GLMM to determine increase or decrease in likelihood over time
+learning_model <-  glmer(accuracy ~ trial_scaled + (1 | monkey), 
+                            data = trained_trial_data, family = binomial)
+
+summary(learning_model)
+
+```
+
+
+
+# Ordinal Position --------------------------------------------------------------------------------------------------
+```{r Prep the Ordinal Position Model}
+head(result.by.critical)
+
+result.by.critical <- result.by.critical %>%
+  mutate(sex = if_else(monkey %in% c("Griffin", "Liam", "Logan", "Nkima"), "Male", "Female"))
+
+# only need the between list pairings for this model
+bw.list.data <- subset(TIL.data, trained_or_novel == "bw_novel")
+
+bw.list.data$ordinal_position <- ifelse(bw.list.data$trial_type == "B>D" | 
+                                        bw.list.data$trial_type == "B>F" |
+                                        bw.list.data$trial_type == "D>F",
+                                        "equal", ifelse(bw.list.data$trial_type == "A>D" |
+                                        bw.list.data$trial_type == "A>F" |
+                                        bw.list.data$trial_type == "A>G" |
+                                        bw.list.data$trial_type == "D>G" |
+                                        bw.list.data$trial_type == "B>G", 
+                                               "consistent", "contradictory"))
+
+bw.list.data$ordinal_position <- as.factor(bw.list.data$ordinal_position)
+
+```
+
+```{r Run the Models for Ordinal Position}
+# Models
+model_null_ordinal<-glmer(accuracy ~ 1 + (1 | monkey), 
+                  data=bw.list.data, family = binomial)
+
+# One fixed effect only models
+model_1_ordinal<-glmer(accuracy ~ ordinal_position + (1 | monkey), 
+               data=bw.list.data, family = binomial)
+
+model_2_ordinal<-glmer(accuracy ~ sex + (1 | monkey), 
+               data=bw.list.data, family = binomial)
+
+model_3_ordinal<-glmer(accuracy ~ deferred_condition + (1 | monkey), 
+               data=bw.list.data, family = binomial)
+
+# Two fixed effects no interaction
+model_4_ordinal<-glmer(accuracy ~ ordinal_position + sex + (1 | monkey), 
+               data=bw.list.data, family = binomial)
+
+model_5_ordinal<-glmer(accuracy ~ ordinal_position + deferred_condition + (1 | monkey), 
+               data=bw.list.data, family = binomial)
+
+# Interactions
+model_6_ordinal<-glmer(accuracy ~ ordinal_position*sex + (1 | monkey), 
+               data=bw.list.data, family = binomial)
+
+model_7_ordinal<-glmer(accuracy ~ ordinal_position*deferred_condition + (1 | monkey), 
+               data=bw.list.data, family = binomial)
+
+anova(model_1_ordinal, model_2_ordinal, model_3_ordinal, model_4_ordinal, model_5_ordinal, model_6_ordinal, model_7_ordinal)
+
+```
+
+```{r Run the Models and Compare}
+# Best Model: model_6_ordinal ordinal_position x Sex interaction
+summary(model_6_ordinal)
+
+Anova(model_6_ordinal, type = "III", test.statistic = "Chisq")
+
+rm(model_1_ordinal, model_2_ordinal, model_3_ordinal, model_4_ordinal, model_5_ordinal, model_7_ordinal)
+
+```
+
+```{r Probe the Trial Type Sex Interaction}
+# Estimated marginal means for interaction
+emm_all <- emmeans(model_6_ordinal, ~ ordinal_position * sex, type = "response")
+
+# 1) Pairwise comparisons of trial types *within* each deferred condition
+contrast_within_sex <- contrast(emm_all, 
+                                    method = "pairwise", 
+                                    by = "sex", 
+                                    adjust = "holm")
+
+# 2) Pairwise comparisons of deferred conditions *within* each trial type
+contrast_within_trialtype <- contrast(emm_all, 
+                                     method = "pairwise", 
+                                     by = "ordinal_position",  # now by trial type
+                                     adjust = "holm")
+
+# View results
+contrast_within_trialtype
+confint(contrast_within_trialtype, level = 0.95)
+
+contrast_within_sex
+confint(contrast_within_sex, level = 0.95)
+
+
+```
+
+```{r Determine what was different from chance (0.50)}
+bw.list.data$accuracy <- as.numeric(as.character(bw.list.data$accuracy))
+
+
+subject_props_bw <- bw.list.data %>%
+  group_by(monkey, ordinal_position, sex) %>%
+  summarise(
+    prop_correct = mean(accuracy)
+  ) %>%
+  ungroup()
+
+library(broom)
+
+# Run t-tests comparing to chance (0.5)
+t_test_results_bw <- subject_props_bw %>%
+  group_by(ordinal_position, sex) %>%
+  summarise(
+    t_test = list(t.test(prop_correct, mu = 0.5)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    tidy = map(t_test, broom::tidy)
+  ) %>%
+  unnest(tidy)
+
+t_test_results_bw <- t_test_results_bw %>%
+  mutate(p.adjusted = p.adjust(p.value, method = "holm"))
+
+detach("package:broom", unload = TRUE)
+
+
+bw.list.data$accuracy <- as.factor(bw.list.data$accuracy)
+
+```
+
+
+```{r}
+result.by.critical$ordinal_position <- result.by.critical$critical_pairs
+
+levels(result.by.critical$ordinal_position)[
+  levels(result.by.critical$ordinal_position) == "Contradictory"
+] <- "Conflicting"
+
+# Create a small data frame with the label info
+asterisk_data_F_ordinal <- data.frame(
+  ordinal_position = c("Consistent", "Conflicting", "Equal"),  # x positions for asterisks
+  correct_pct = c(0.99, 0.99, 0.99),                         # y positions (adjust as needed)
+  label = c("***", "**", "***"),
+  sex = rep("Female", 3)
+)
+
+asterisk_data_M_ordinal <- data.frame(
+  ordinal_position = c("Consistent", "Conflicting", "Equal"),  # x positions for asterisks
+  correct_pct = c(0.99, 0.99, 0.99),                         # y positions (adjust as needed)
+  label = c("*", "*", "N.S."),
+  sex = rep("Male", 3)
+)
+
+ggplot(result.by.critical, aes(x = ordinal_position, y = correct_pct, fill = ordinal_position)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) + 
+  geom_quasirandom(width = 0.25, alpha = 0.6, color = "black") + 
+  geom_hline(yintercept = 0.50, linetype = "dashed") +
+  ylim(0, 1.0) +
+  labs(x = "Between-List Trial Types", y = "Percentage Correct") +
+  scale_fill_manual(values = c("Equal" = "gold1", "Consistent" = "red3", "Conflicting" = 'blue')) +
+  facet_wrap(~sex) +
+  geom_text(data = asterisk_data_F_ordinal, aes(x = ordinal_position, y = correct_pct, label = label), inherit.aes = FALSE, 
+            size = 5, fontface = "bold") +
+  geom_text(data = asterisk_data_M_ordinal, aes(x = ordinal_position, y = correct_pct, label = label), inherit.aes = FALSE, 
+            size = 5, fontface = "bold") +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    legend.justification = c(1, 0),
+    legend.background = element_rect(fill = "white", color = "black"), 
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    
+    # Increase axis tick labels size
+    axis.text.x = element_text(size = 14),  # X axis tick labels
+    axis.text.y = element_text(size = 14),  # Y axis tick labels
+    
+    # Increase axis titles size
+    axis.title.x = element_text(size = 16, face = "bold"),  # X axis title
+    axis.title.y = element_text(size = 16, face = "bold"),  # Y axis title
+    
+    # Increase facet strip text (facet titles)
+    strip.text = element_text(size = 16, face = "bold")
+  )
+
+ggsave("Figure_2_Ordinal_Position.png", width = 10, height = 6, dpi = 300)
+```
+
+
+# BD BF DF ---------------------------------------------------------------------
+```{r}
+crit.pair.data <- subset(TIL.data, trial_type == "B>D" | trial_type == "B>F" | trial_type == "D>F")
+
+crit.pair.data.visual <- crit.pair.data %>%
+  group_by(monkey, sex, trial_type) %>%
+  summarize(
+    count_correct = sum(accuracy == 1, na.rm = TRUE),
+    count_incorrect = sum(accuracy == 0, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+crit.pair.data.visual$total_trials <- crit.pair.data.visual$count_correct + crit.pair.data.visual$count_incorrect
+
+crit.pair.data.visual$correct_pct <- crit.pair.data.visual$count_correct / crit.pair.data.visual$total_trials
+
+crit.pair.data.visual$sex <- as.factor(crit.pair.data.visual$sex)
+
+
+```
+
+```{r}
+crit.pair.data$trial_type <- relevel(crit.pair.data$trial_type, ref = "B>F")
+
+
+# Models
+model_null_crit<-glmer(accuracy ~ 1 + (1 | monkey), 
+                  data=crit.pair.data, family = binomial)
+
+# One fixed effect only models
+model_1_crit<-glmer(accuracy ~ trial_type + (1 | monkey), 
+               data=crit.pair.data, family = binomial)
+
+model_2_crit<-glmer(accuracy ~ sex + (1 | monkey), 
+               data=crit.pair.data, family = binomial)
+
+model_3_crit<-glmer(accuracy ~ deferred_condition + (1 | monkey), 
+               data=crit.pair.data, family = binomial)
+
+# Two fixed effects no interaction
+model_4_crit<-glmer(accuracy ~ trial_type + sex + (1 | monkey), 
+               data=crit.pair.data, family = binomial)
+
+model_5_crit<-glmer(accuracy ~ trial_type + deferred_condition + (1 | monkey), 
+               data=crit.pair.data, family = binomial)
+
+# 2 way interactions
+model_6_crit<-glmer(accuracy ~ trial_type*sex + (1 | monkey), 
+               data=crit.pair.data, family = binomial)
+
+model_7_crit<-glmer(accuracy ~ trial_type*deferred_condition + (1 | monkey), 
+               data=crit.pair.data, family = binomial)
+
+anova(model_1_crit, model_2_crit, model_3_crit, model_4_crit, model_5_crit, model_6_crit, model_7_crit)
+
+# Comapre to Null Model
+anova(model_6_crit, model_null_crit)
+
+```
+
+```{r Run the Models and Compare}
+# Best Model: model_4_ordinal
+summary(model_6_crit)
+
+Anova(model_6_crit, type = "III", test.statistic = "Chisq")
+
+tab_model(model_6_crit,
+          show.est = TRUE, show.ci = 0.95,
+          show.p = TRUE, p.style = "numeric",
+          show.se = TRUE, show.r2 = TRUE,
+          show.zeroinf = FALSE,
+          show.re.var = FALSE, show.icc = FALSE,
+          title = "Binomial GLMM predicting accuracy")
+
+rm(model_1_crit, model_2_crit, model_3_crit, model_4_crit, model_5_crit, model_7_crit)
+
+```
+
+```{r Probe main effect within Males}
+# That’s because your glmer table reports log-odds coefficients for each comparison relative to the reference category (B→F, Female), not the direct male-specific contrasts.
+# For males, you have to combine: the main effect of trial type (difference for females) and the interaction term (extra difference for males)
+
+#That combination changes both the estimate and the SE — you can’t just reuse the female values. You’d need to run an emmeans post-hoc contrast for trial_type | sex to get male-specific odds ratios, SEs, and p-values.
+
+emm <- emmeans(model_6_crit, ~ trial_type | sex, type = "response")
+
+pairs_or <- pairs(emm, adjust = "none", reverse = TRUE)
+
+pairs_or
+
+confint(pairs_or)
+
+```
+
+
+```{r Determine what was different from chance (0.50)}
+crit.pair.data$accuracy <- as.numeric(as.character(crit.pair.data$accuracy))
+
+
+subject_props_crit <- crit.pair.data %>%
+  group_by(monkey, trial_type, sex) %>%
+  summarise(
+    prop_correct = mean(accuracy)
+  ) %>%
+  ungroup()
+
+library(broom)
+
+# Run t-tests comparing to chance (0.5)
+t_test_results_crit <- subject_props_crit %>%
+  group_by(trial_type, sex) %>%
+  summarise(
+    t_test = list(t.test(prop_correct, mu = 0.5)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    tidy = map(t_test, broom::tidy)
+  ) %>%
+  unnest(tidy)
+
+t_test_results_crit <- t_test_results_crit %>%
+  mutate(p.adjusted = p.adjust(p.value, method = "holm"))
+
+detach("package:broom", unload = TRUE)
+
+critical.pair.results <- crit.pair.data %>%
+  group_by(trial_type, sex) %>%
+  summarise(
+    n_correct = sum(accuracy),
+    n_total = n(),
+    prop_correct = mean(accuracy),
+    binom_p = binom.test(n_correct, n_total, p = 0.5)$p.value
+  ) %>%
+  ungroup()
+
+
+crit.pair.data$accuracy <- as.factor(crit.pair.data$accuracy)
+
+```
+
+
+```{r}
+
+# Create a small data frame with the label info
+asterisk_data_F_critical <- data.frame(
+  trial_type = c("B>D", "B>F", "D>F"),  # x positions for asterisks
+  correct_pct = c(0.99, 0.99, 0.99),                         # y positions (adjust as needed)
+  label = c("*", "***", "*"),
+  sex = rep("Female", 3)
+)
+
+asterisk_data_M_critical <- data.frame(
+  trial_type = c("B>D", "B>F", "D>F"),  # x positions for asterisks
+  correct_pct = c(0.99, 0.99, 0.99),                         # y positions (adjust as needed)
+  label = c("*", "N.S.", "N.S."),
+  sex = rep("Male", 3)
+)
+
+
+ggplot(crit.pair.data.visual, aes(x = trial_type, y = correct_pct, fill = trial_type)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) + 
+  geom_quasirandom(width = 0.25, alpha = 0.6, color = "black") +
+  geom_hline(yintercept = 0.50, linetype = "dashed") +
+  ylim(0, 1.0) +
+  labs(x = "Between-List Pairs", y = "Percentage Correct") +
+  scale_fill_manual(values = c("B>D" = "red3", "B>F" = "blue", "D>F" = 'gold1')) +
+  facet_wrap(~sex) +
+  geom_text(data = asterisk_data_F_critical, aes(x = trial_type, y = correct_pct, label = label), inherit.aes = FALSE, 
+            size = 5, fontface = "bold") +
+  geom_text(data = asterisk_data_M_critical, aes(x = trial_type, y = correct_pct, label = label), inherit.aes = FALSE, 
+            size = 5, fontface = "bold") +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    legend.justification = c(1, 0),
+    legend.background = element_rect(fill = "white", color = "black"), 
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    
+    # Increase axis tick labels size
+    axis.text.x = element_text(size = 14),  # X axis tick labels
+    axis.text.y = element_text(size = 14),  # Y axis tick labels
+    
+    # Increase axis titles size
+    axis.title.x = element_text(size = 16, face = "bold"),  # X axis title
+    axis.title.y = element_text(size = 16, face = "bold"),  # Y axis title
+    
+    # Increase facet strip text (facet titles)
+    strip.text = element_text(size = 16, face = "bold")
+  )
+
+
+ggsave("Figure_3_Critical_Pairs.png", width = 10, height = 6, dpi = 300)
+```
+
+```{r Examine the effect of rank on females.}
+
+head(novel.df)
+
+rank.data <- read_excel("C:/Users/matth/OneDrive/Documents/Georgia State/Research Projects/Transitive Inference/Manuscript/Data Analysis/rank_data.xlsx")
+
+novel.df <- novel.df %>%
+  left_join(rank.data, by = "monkey")
+
+FEMALE.data <- subset(novel.df, sex == "Female")
+
+FEMALE.data$sex <- as.factor(FEMALE.data$sex)
+FEMALE.data$correct_or_incorrect <- factor(FEMALE.data$correct_or_incorrect, levels = c(0, 1))
+
+levels(FEMALE.data$sex)
+
+levels(FEMALE.data$correct_or_incorrect)
+
+# MODEL FAILED TO CONVERGE
+rank_model <- glmer(correct_or_incorrect ~ critical_pairs*rank + (1 | monkey), 
+               data=FEMALE.data, family = binomial)
+
+
+```
+
+```{r Model failed to converge, so will visualize instead}
+FEMALE.data$accuracy <- ifelse(FEMALE.data$correct_or_incorrect == 1, 1, 0)
+
+FEMALE.data$accuracy <- as.numeric(FEMALE.data$accuracy)
+
+
+female_summary <- FEMALE.data %>%
+  group_by(monkey, rank, critical_pairs) %>%
+  summarise(
+    prop_correct = mean(as.numeric(accuracy)),
+    se = sd(as.numeric(accuracy), na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+
+female_summary$critical_pairs <- ifelse(female_summary$critical_pairs == "contradictory", "conflicting", female_summary$critical_pairs)
+
+
+ggplot(female_summary, aes(x = rank, y = prop_correct, color = critical_pairs)) +
+  geom_point(position = position_dodge(width = 0.1), size = 4) +
+  geom_errorbar(aes(ymin = prop_correct - se, ymax = prop_correct + se),
+                width = 0.2, position = position_dodge(width = 0.1)) +
+  geom_hline(yintercept = 0.50, linetype = "dashed", color = "black") + 
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0,1)) +
+  scale_x_continuous(breaks = seq(1200, 1500, by = 100), limits = c(1200, 1500)) +
+  labs(
+    x = "Rank (Elo Rating)",
+    y = "Proportion of Trials \nCorrectly Sequenced",
+    color = "Trial type",
+    title = NULL
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid.major.x = element_blank(),  
+    panel.grid.minor.x = element_blank(),
+    # Increase axis tick labels size
+    axis.text.x = element_text(size = 14),  # X axis tick labels
+    axis.text.y = element_text(size = 14),  # Y axis tick labels
+    
+    # Increase axis titles size
+    axis.title.x = element_text(size = 16, face = "bold"),  # X axis title
+    axis.title.y = element_text(size = 16, face = "bold"),  # Y axis title
+    legend.position = c(0.95, 0.05), 
+    legend.justification = c("right", "bottom") 
+  )
+
+ggsave("Figure_S1_Rank_Trends.png", width = 10, height = 6, dpi = 300)
+
+
+```
+
+Check all parameters and assumptions about models
+
+
+```{r}
+library(DHARMa)
+# Null fits
+anova(model_6_trials, model_null_trials)
+anova(model_6_ordinal, model_null_ordinal)
+anova(model_6_crit, model_null_crit)
+
+# Random Effect Variance (Should be small)
+summary(model_6_trials)$varcor
+summary(model_6_ordinal)$varcor
+summary(model_6_crit)$varcor
+
+
+# Simulate residuals
+sim_res_1 <- simulateResiduals(fittedModel = model_6_trials, n = 1000)
+sim_res_2 <- simulateResiduals(fittedModel = model_6_ordinal, n = 1000)
+sim_res_3 <- simulateResiduals(fittedModel = model_6_crit, n = 1000)
+
+
+# Plot residuals
+plot(sim_res_1)
+plot(sim_res_2)
+plot(sim_res_3)
+
+# Test for overdispersion
+testDispersion(sim_res_1)
+testDispersion(sim_res_2)
+testDispersion(sim_res_3)
+```
+
+
+--- End of Analysis for Manuscript ---
