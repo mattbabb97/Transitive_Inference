@@ -26,6 +26,8 @@ project/
     ├── Figure_1_Trial_Type_v3
     └── Figure_2_Ordinal_Position
     └── Figure_3_Critical_Pairs
+└── Training Data/
+    ├── rw-TIL-monkeys.rmd     # Script for Rescorla-Wagner Training Model
 ```
 
 ---
