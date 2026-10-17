@@ -28,6 +28,8 @@ project/
     └── Figure_3_Critical_Pairs
 └── Training Data/
     ├── rw-TIL-monkeys.rmd     # Script for Rescorla-Wagner Training Model
+    └── Figure_S1                # Resulting associative values from training
+    └── Figure_S2
 ```
 
 ---
