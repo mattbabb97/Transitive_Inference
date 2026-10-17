@@ -162,11 +162,11 @@ emmeans(model, pairwise ~ trial_type, adjust = "holm")
 
 All models were checked for:
 
-- ✅ Successful convergence and reasonable parameter estimates
-- ✅ Residual patterns (no systematic violations)
-- ✅ Dispersion (no overdispersion)
-- ✅ Influential observations
-- ✅ Collinearity (VIF < 1.1 for all predictors)
+- Successful convergence and reasonable parameter estimates
+- Residual patterns (no systematic violations)
+- Dispersion (no overdispersion)
+- Influential observations
+- Collinearity (VIF < 1.1 for all predictors)
 
 See `analysis/model_diagnostics.R` and Supplementary Information for full diagnostic output.
 
